@@ -1353,7 +1353,7 @@ Address: %4
         <translation type="unfinished"/>
     </message>
     <message>
-        <source>Enter a Dogecoin address (e.g. %1</source>
+        <source>Enter a Dogecoin address (e.g. %1)</source>
         <translation type="unfinished"/>
     </message>
 </context>
@@ -2048,7 +2048,7 @@ Address: %4
         <translation type="unfinished"/>
     </message>
     <message>
-        <source>Enter a Dogecoin address (e.g. %1</source>
+        <source>Enter a Dogecoin address (e.g. %1)</source>
         <translation type="unfinished"/>
     </message>
     <message>
