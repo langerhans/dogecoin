@@ -289,6 +289,7 @@ static const CRPCCommand vRPCCommands[] =
     { "network",            "getnettotals",           &getnettotals,           true  },
     { "network",            "getpeerinfo",            &getpeerinfo,            true  },
     { "network",            "ping",                   &ping,                   true  },
+    { "network",            "disconnectpeer",         &disconnectpeer,         true  }, 
 
     /* Block chain and UTXO */
     { "blockchain",         "getblockchaininfo",      &getblockchaininfo,      true  },

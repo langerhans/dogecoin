@@ -46,6 +46,7 @@ using namespace std;
  * Global state
  */
 
+statsd::StatsdClient statsClient;
 CCriticalSection cs_main;
 
 BlockMap mapBlockIndex;
@@ -555,6 +556,8 @@ bool AddOrphanTx(const CTransaction& tx, NodeId peer)
 
     LogPrint("mempool", "stored orphan tx %s (mapsz %u prevsz %u)\n", hash.ToString(),
              mapOrphanTransactions.size(), mapOrphanTransactionsByPrev.size());
+    statsClient.gauge("transactions.orphans", mapOrphanTransactions.size());
+    statsClient.inc("transactions.orphans.add", 1.0f);
     return true;
 }
 
@@ -573,6 +576,7 @@ void static EraseOrphanTx(uint256 hash)
             mapOrphanTransactionsByPrev.erase(itPrev);
     }
     mapOrphanTransactions.erase(it);
+    statsClient.inc("transactions.orphans.remove", 1.0f);
 }
 
 void EraseOrphansFor(NodeId peer)
@@ -589,6 +593,7 @@ void EraseOrphansFor(NodeId peer)
         }
     }
     if (nErased > 0) LogPrint("mempool", "Erased %d orphan tx from peer %d\n", nErased, peer);
+    statsClient.gauge("transactions.orphans", mapOrphanTransactions.size());
 }
 
 
@@ -605,6 +610,7 @@ unsigned int LimitOrphanTxSize(unsigned int nMaxOrphans)
         EraseOrphanTx(it->first);
         ++nEvicted;
     }
+    statsClient.gauge("transactions.orphans", mapOrphanTransactions.size());
     return nEvicted;
 }
 
@@ -802,6 +808,7 @@ unsigned int GetP2SHSigOpCount(const CTransaction& tx, const CCoinsViewCache& in
 
 bool CheckTransaction(const CTransaction& tx, CValidationState &state)
 {
+    boost::posix_time::ptime start = boost::posix_time::microsec_clock::local_time();
     // Basic checks that don't depend on any context
     if (tx.vin.empty())
         return state.DoS(10, error("CheckTransaction(): vin empty"),
@@ -854,6 +861,10 @@ bool CheckTransaction(const CTransaction& tx, CValidationState &state)
                                  REJECT_INVALID, "bad-txns-prevout-null");
     }
 
+    boost::posix_time::ptime finish = boost::posix_time::microsec_clock::local_time();
+    boost::posix_time::time_duration diff = finish - start;
+    statsClient.timing("CheckTransaction_us", diff.total_microseconds(), 1.0f);
+
     return true;
 }
 
@@ -892,6 +903,7 @@ CAmount GetMinRelayFee(const CTransaction& tx, unsigned int nBytes, bool fAllowF
 bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransaction &tx, bool fLimitFree,
                         bool* pfMissingInputs, bool fRejectAbsurdFee)
 {
+    boost::posix_time::ptime start = boost::posix_time::microsec_clock::local_time();
     AssertLockHeld(cs_main);
     if (pfMissingInputs)
         *pfMissingInputs = false;
@@ -920,8 +932,10 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
 
     // is it already in the memory pool?
     uint256 hash = tx.GetHash();
-    if (pool.exists(hash))
+    if (pool.exists(hash)) {
+        statsClient.inc("transactions.duplicate", 1.0f);
         return false;
+    }
 
     // Check for conflicts with in-memory transactions
     {
@@ -1064,9 +1078,23 @@ bool AcceptToMemoryPool(CTxMemPool& pool, CValidationState &state, const CTransa
 
         // Store transaction in memory
         pool.addUnchecked(hash, entry, !IsInitialBlockDownload());
+        statsClient.count("transactions.sizeBytes", nSize, 1.0f);
+        statsClient.count("transactions.fees", nFees, 1.0f);
+        statsClient.count("transactions.inputValue", nValueIn, 1.0f);
+        statsClient.count("transactions.outputValue", nValueOut, 1.0f);
+        statsClient.count("transactions.sigOps", nSigOps, 1.0f);
+        statsClient.count("transactions.priority", dPriority, 1.0f);
     }
 
     SyncWithWallets(tx, NULL);
+
+    boost::posix_time::ptime finish = boost::posix_time::microsec_clock::local_time();
+    boost::posix_time::time_duration diff = finish - start;
+    statsClient.timing("AcceptToMemoryPool_ms", diff.total_milliseconds(), 1.0f);
+    statsClient.gauge("transactions.txInMemoryPool", pool.size(), 0.1f);
+    statsClient.inc("transactions.accepted", 1.0f);
+    statsClient.count("transactions.inputs", tx.vin.size(), 1.0f);
+    statsClient.count("transactions.outputs", tx.vout.size(), 1.0f);
 
     return true;
 }
@@ -1344,12 +1372,16 @@ void Misbehaving(NodeId pnode, int howmuch)
     {
         LogPrintf("%s: %s (%d -> %d) BAN THRESHOLD EXCEEDED\n", __func__, state->name, state->nMisbehavior-howmuch, state->nMisbehavior);
         state->fShouldBan = true;
-    } else
+        statsClient.inc("misbehavior.banned", 1.0f);
+    } else {
         LogPrintf("%s: %s (%d -> %d)\n", __func__, state->name, state->nMisbehavior-howmuch, state->nMisbehavior);
+        statsClient.count("misbehavior.amount", howmuch, 1.0);
+    }
 }
 
 void static InvalidChainFound(CBlockIndex* pindexNew)
 {
+    statsClient.inc("warnings.InvalidBlockFound", 1.0f);
     if (!pindexBestInvalid || pindexNew->nChainWork > pindexBestInvalid->nChainWork)
         pindexBestInvalid = pindexNew;
 
@@ -1364,6 +1396,7 @@ void static InvalidChainFound(CBlockIndex* pindexNew)
 }
 
 void static InvalidBlockFound(CBlockIndex *pindex, const CValidationState &state) {
+    statsClient.inc("warnings.InvalidBlockFound", 1.0f);
     int nDoS = 0;
     if (state.IsInvalid(nDoS)) {
         std::map<uint256, NodeId>::iterator it = mapBlockSource.find(pindex->GetBlockHash());
@@ -1406,6 +1439,7 @@ void UpdateCoins(const CTransaction& tx, CValidationState &state, CCoinsViewCach
     }
 
     // add outputs
+    statsClient.gauge("transactions.txCacheSize", inputs.GetCacheSize(), 0.1f);
     inputs.ModifyCoins(tx.GetHash())->FromTx(tx, nHeight);
 }
 
@@ -1425,6 +1459,7 @@ bool CScriptCheck::operator()() {
 
 bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsViewCache &inputs, bool fScriptChecks, unsigned int flags, bool cacheStore, std::vector<CScriptCheck> *pvChecks)
 {
+    boost::posix_time::ptime start = boost::posix_time::microsec_clock::local_time();
     if (!tx.IsCoinBase())
     {
         if (pvChecks)
@@ -1523,6 +1558,10 @@ bool CheckInputs(const CTransaction& tx, CValidationState &state, const CCoinsVi
             }
         }
     }
+
+    boost::posix_time::ptime finish = boost::posix_time::microsec_clock::local_time();
+    boost::posix_time::time_duration diff = finish - start;
+    statsClient.timing("CheckInputs_ms", diff.total_milliseconds(), 1.0f);
 
     return true;
 }
@@ -1695,6 +1734,7 @@ bool DisconnectBlock(CBlock& block, CValidationState& state, CBlockIndex* pindex
 
     // move best block pointer to prevout block
     view.SetBestBlock(pindex->pprev->GetBlockHash());
+    statsClient.gauge("transactions.txCacheSize", view.GetCacheSize(), 1.0f);
 
     if (pfClean) {
         *pfClean = fClean;
@@ -1958,6 +1998,7 @@ bool ConnectBlock(const CBlock& block, CValidationState& state, CBlockIndex* pin
 
     // add this block to the view's block chain
     view.SetBestBlock(pindex->GetBlockHash());
+    statsClient.gauge("transactions.txCacheSize", view.GetCacheSize(), 1.0f);
 
     int64_t nTime3 = GetTimeMicros(); nTimeIndex += nTime3 - nTime2;
     LogPrint("bench", "    - Index writing: %.2fms [%.2fs]\n", 0.001 * (nTime3 - nTime2), nTimeIndex * 0.000001);
@@ -2097,6 +2138,7 @@ void PruneAndFlush() {
 void static UpdateTip(CBlockIndex *pindexNew) {
     const CChainParams& chainParams = Params();
     chainActive.SetTip(pindexNew);
+    statsClient.gauge("blocks.currentHeight", chainActive.Height(), 1.0f);
 
     // New best block
     nTimeBestReceived = GetTime();
@@ -2691,6 +2733,7 @@ bool CheckBlockHeader(const CBlockHeader& block, CValidationState& state, bool f
 
 bool CheckBlock(const CBlock& block, CValidationState& state, bool fCheckPOW, bool fCheckMerkleRoot)
 {
+    boost::posix_time::ptime start = boost::posix_time::microsec_clock::local_time();
     // These are checks that are independent of context.
 
     // Check that the header is valid (particularly PoW).  This is mostly
@@ -2745,6 +2788,13 @@ bool CheckBlock(const CBlock& block, CValidationState& state, bool fCheckPOW, bo
     if (nSigOps > MAX_BLOCK_SIGOPS)
         return state.DoS(100, error("CheckBlock(): out-of-bounds SigOpCount"),
                          REJECT_INVALID, "bad-blk-sigops", true);
+
+    boost::posix_time::ptime finish = boost::posix_time::microsec_clock::local_time();
+    boost::posix_time::time_duration diff = finish - start;
+    statsClient.timing("CheckBlock_us", diff.total_microseconds(), 1.0f);
+    statsClient.gauge("blocks.currentSizeBytes", ::GetSerializeSize(block, SER_NETWORK, PROTOCOL_VERSION));
+    statsClient.gauge("blocks.currentNumTransactions", block.vtx.size());
+    statsClient.gauge("blocks.currentSigOps", nSigOps);
 
     return true;
 }
@@ -2879,6 +2929,7 @@ bool AcceptBlockHeader(const CBlockHeader& block, CValidationState& state, CBloc
 
 bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, bool fRequested, CDiskBlockPos* dbp)
 {
+    boost::posix_time::ptime start = boost::posix_time::microsec_clock::local_time();
     const CChainParams& chainparams = Params();
     AssertLockHeld(cs_main);
 
@@ -2927,6 +2978,10 @@ bool AcceptBlock(CBlock& block, CValidationState& state, CBlockIndex** ppindex, 
     } catch (const std::runtime_error& e) {
         return AbortNode(state, std::string("System error: ") + e.what());
     }
+
+    boost::posix_time::ptime finish = boost::posix_time::microsec_clock::local_time();
+    boost::posix_time::time_duration diff = finish - start;
+    statsClient.timing("AcceptBlock_us", diff.total_microseconds(), 1.0f);
 
     if (fCheckForPruning)
         FlushStateToDisk(state, FLUSH_STATE_NONE); // we just allocated more disk space for block files
@@ -3963,6 +4018,7 @@ void static ProcessGetData(CNode* pfrom)
 
 bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, int64_t nTimeReceived)
 {
+    statsClient.inc("message.received." + strCommand, 1.0f);
     const CChainParams& chainparams = Params();
     RandAddSeedPerfmon();
     LogPrint("net", "received: %s (%u bytes) peer=%d\n", SanitizeString(strCommand), vRecv.size(), pfrom->id);
@@ -4180,6 +4236,7 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
             pfrom->fGetAddr = false;
         if (pfrom->fOneShot)
             pfrom->fDisconnect = true;
+        statsClient.gauge("peers.knownAddresses", addrman.size(), 1.0f);
     }
 
 
@@ -4200,6 +4257,11 @@ bool static ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv, 
         for (unsigned int nInv = 0; nInv < vInv.size(); nInv++)
         {
             const CInv &inv = vInv[nInv];
+
+            if (inv.type == MSG_TX)
+                statsClient.inc("message.received.inv_tx", 1.0f);
+            else if (inv.type == MSG_BLOCK)
+                statsClient.inc("message.received.inv_block", 1.0f);
 
             boost::this_thread::interruption_point();
             pfrom->AddInventoryKnown(inv);

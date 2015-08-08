@@ -30,6 +30,8 @@
 #include <boost/foreach.hpp>
 #include <boost/signals2/signal.hpp>
 
+#include "statsd_client.h"
+
 class CAddrMan;
 class CBlockIndex;
 class CScheduler;
@@ -135,6 +137,7 @@ void SetReachable(enum Network net, bool fFlag = true);
 CAddress GetLocalAddress(const CNetAddr *paddrPeer = NULL);
 
 
+extern statsd::StatsdClient statsClient;
 extern bool fDiscover;
 extern bool fListen;
 extern uint64_t nLocalServices;
@@ -429,6 +432,26 @@ public:
 
     void PushVersion();
 
+    std::string RejectCodeToString(const char& code)
+    {
+        if (code == 0x01)
+            return "malformed";
+        if (code == 0x10)
+            return "invalid";
+        if (code == 0x11)
+            return "obsolete";
+        if (code == 0x12)
+            return "duplicate";
+        if (code == 0x40)
+            return "nonstandard";
+        if (code == 0x41)
+            return "dust";
+        if (code == 0x42)
+            return "insufficientfee";
+        if (code == 0x43)
+            return "checkpoint";
+        return "";
+    }
 
     void PushMessage(const char* pszCommand)
     {
@@ -479,6 +502,8 @@ public:
     template<typename T1, typename T2, typename T3>
     void PushMessage(const char* pszCommand, const T1& a1, const T2& a2, const T3& a3)
     {
+        if (std::string(pszCommand) == "reject")
+            statsClient.inc("message.sent.reject_" + std::string(a1) + "_" + RejectCodeToString(a2), 1.0f);
         try
         {
             BeginMessage(pszCommand);
@@ -495,6 +520,8 @@ public:
     template<typename T1, typename T2, typename T3, typename T4>
     void PushMessage(const char* pszCommand, const T1& a1, const T2& a2, const T3& a3, const T4& a4)
     {
+        if (std::string(pszCommand) == "reject")
+            statsClient.inc("message.sent.reject_" + std::string(a1) + "_" + RejectCodeToString(a2), 1.0f);
         try
         {
             BeginMessage(pszCommand);
@@ -511,6 +538,8 @@ public:
     template<typename T1, typename T2, typename T3, typename T4, typename T5>
     void PushMessage(const char* pszCommand, const T1& a1, const T2& a2, const T3& a3, const T4& a4, const T5& a5)
     {
+        if (std::string(pszCommand) == "reject")
+            statsClient.inc("message.sent.reject_" + std::string(a1) + "_" + RejectCodeToString(a2), 1.0f);
         try
         {
             BeginMessage(pszCommand);
@@ -527,6 +556,8 @@ public:
     template<typename T1, typename T2, typename T3, typename T4, typename T5, typename T6>
     void PushMessage(const char* pszCommand, const T1& a1, const T2& a2, const T3& a3, const T4& a4, const T5& a5, const T6& a6)
     {
+        if (std::string(pszCommand) == "reject")
+            statsClient.inc("message.sent.reject_" + std::string(a1) + "_" + RejectCodeToString(a2), 1.0f);
         try
         {
             BeginMessage(pszCommand);
@@ -543,6 +574,8 @@ public:
     template<typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7>
     void PushMessage(const char* pszCommand, const T1& a1, const T2& a2, const T3& a3, const T4& a4, const T5& a5, const T6& a6, const T7& a7)
     {
+        if (std::string(pszCommand) == "reject")
+            statsClient.inc("message.sent.reject_" + std::string(a1) + "_" + RejectCodeToString(a2), 1.0f);
         try
         {
             BeginMessage(pszCommand);
@@ -559,6 +592,8 @@ public:
     template<typename T1, typename T2, typename T3, typename T4, typename T5, typename T6, typename T7, typename T8>
     void PushMessage(const char* pszCommand, const T1& a1, const T2& a2, const T3& a3, const T4& a4, const T5& a5, const T6& a6, const T7& a7, const T8& a8)
     {
+        if (std::string(pszCommand) == "reject")
+            statsClient.inc("message.sent.reject_" + std::string(a1) + "_" + RejectCodeToString(a2), 1.0f);
         try
         {
             BeginMessage(pszCommand);
