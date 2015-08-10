@@ -39,9 +39,15 @@ CLEAN_BITCOIN_QT_TEST = $(TEST_QT_MOC_CPP) qt/test/*.gcda qt/test/*.gcno
 
 CLEANFILES += $(CLEAN_BITCOIN_QT_TEST)
 
-test_bitcoin_qt : qt/test/test_bitcoin-qt$(EXEEXT)
+if TARGET_WINDOWS
+  TEST_BINARY='wine test/test_bitcoin-qt$(EXEEXT)'
+else
+  TEST_BINARY=test/test_bitcoin-qt$(EXEEXT)
+endif
 
-test_bitcoin_qt_check : qt/test/test_bitcoin-qt$(EXEEXT) FORCE
+test_bitcoin_qt : $(TEST_BINARY)
+
+test_bitcoin_qt_check : $(TEST_BINARY) FORCE
 	$(MAKE) check-TESTS TESTS=$^
 
 test_bitcoin_qt_clean: FORCE
