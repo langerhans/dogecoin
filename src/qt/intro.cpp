@@ -6,7 +6,6 @@
 #include "ui_intro.h"
 
 #include "guiutil.h"
-#include "scicon.h"
 
 #include "util.h"
 
@@ -168,7 +167,7 @@ void Intro::pickDataDirectory()
         /* If current default data directory does not exist, let the user choose one */
         Intro intro;
         intro.setDataDirectory(dataDir);
-        intro.setWindowIcon(SingleColorIcon(":icons/bitcoin"));
+        intro.setWindowIcon(QIcon(":icons/bitcoin"));
 
         while(true)
         {
@@ -182,7 +181,7 @@ void Intro::pickDataDirectory()
                 TryCreateDirectory(GUIUtil::qstringToBoostPath(dataDir));
                 break;
             } catch (const fs::filesystem_error&) {
-                QMessageBox::critical(0, tr("Bitcoin Core"),
+                QMessageBox::critical(0, tr("Dogecoin Core"),
                     tr("Error: Specified data directory \"%1\" cannot be created.").arg(dataDir));
                 /* fall through, back to choosing screen */
             }
