@@ -669,8 +669,8 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
     fPrintToConsole = GetBoolArg("-printtoconsole", false);
     fLogTimestamps = GetBoolArg("-logtimestamps", true);
     fLogIPs = GetBoolArg("-logips", false);
-	
-	fBloomFilters = GetBoolArg("-bloomfilters", true);
+
+    fBloomFilters = GetBoolArg("-bloomfilters", true);
     if (fBloomFilters) {
         nLocalServices |= NODE_BLOOM;
     }
